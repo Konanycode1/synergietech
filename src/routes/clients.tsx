@@ -30,12 +30,18 @@ import { Dialog, DialogContent,
   DialogHeader,
   DialogTitle, } from "@/components/ui/dialog";
 
-const formatDate = (value: string) =>
-  new Intl.DateTimeFormat("fr-FR", {
+const formatDate = (value?: string | null) => {
+  if (!value) return "-";
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "-";
+
+  return new Intl.DateTimeFormat("fr-FR", {
     day: "2-digit",
     month: "short",
     year: "numeric",
-  }).format(new Date(value));
+  }).format(date);
+};
 
 const clientFormSchema = z.object({
   name: z.string().trim().min(1, "Le nom est obligatoire").max(120),

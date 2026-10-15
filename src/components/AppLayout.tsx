@@ -7,6 +7,8 @@ import {
   LayoutDashboard,
   LogOut,
   Menu,
+  Package,
+  CircleUserRound,
   UserCog,
   Users,
   Wrench,
@@ -26,6 +28,7 @@ const NAVIGATION_ICONS: Record<NavigationIcon, typeof LayoutDashboard> = {
   clients: Building2,
   interventions: Wrench,
   team: UserCog,
+  stock: Package,
   applicants: ClipboardList,
 };
 
@@ -34,15 +37,36 @@ export function AppLayout() {
   const navigate = useNavigate();
   const { mutate } = useSWRConfig();
   const logout = useAuth((state) => state.logout);
+  const user = useAuth((state) => state.user);
+  const userName = useAuth((state) => state.userName);
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const section = getAppSection(pathname);
   const basePath = `/${section}`;
+  // Les techniciens travaillent sur le terrain : sur téléphone, navigation par onglets en bas.
+  const isFieldMode = section === "technicien";
+  const displayName = user?.name || userName || user?.email || "Utilisateur";
+  const role = user?.role || section.toLocaleUpperCase("fr-FR");
+  const roleLabel =
+    {
+      SUPERADMIN: "Super administrateur",
+      ADMIN: "Administrateur",
+      SECRETAIRE: "Secrétaire",
+      COMMERCIAL: "Commercial",
+      TECHNICIEN: "Technicien",
+      COMPTABLE: "Comptable",
+    }[role] || role;
   const navItems = NAVIGATION_BY_SECTION[section].map((item) => ({
     ...item,
     to: `${basePath}/${item.path}`,
     icon: NAVIGATION_ICONS[item.icon],
   }));
+
+  const handleLogout = () => {
+    logout();
+    void mutate(() => true, undefined, { revalidate: false });
+    navigate("/", { replace: true });
+  };
 
   const NavContent = (
     <>
@@ -86,15 +110,22 @@ export function AppLayout() {
         })}
       </nav>
       <div className="px-3 py-4 border-t border-sidebar-border">
+        <div className="mb-3 flex items-center gap-2.5 rounded-md bg-sidebar-accent/50 px-3 py-2.5">
+          <div className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-primary/15 text-primary">
+            <CircleUserRound className="h-5 w-5" />
+          </div>
+          <div className="min-w-0">
+            <div className="truncate text-sm font-medium" title={displayName}>
+              {displayName}
+            </div>
+            <div className="truncate text-[11px] text-sidebar-foreground/60">{roleLabel}</div>
+          </div>
+        </div>
         <Button
           variant="ghost"
           size="sm"
           className="mb-3 w-full justify-start text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground"
-          onClick={() => {
-            logout();
-            void mutate(() => true, undefined, { revalidate: false });
-            navigate("/", { replace: true });
-          }}
+          onClick={handleLogout}
         >
           <LogOut className="mr-2 h-4 w-4" />
           Se déconnecter
@@ -126,13 +157,15 @@ export function AppLayout() {
       <main className="flex-1 min-w-0 flex flex-col">
         {/* Mobile top bar */}
         <div className="lg:hidden flex items-center gap-3 px-4 py-3 border-b border-border bg-card sticky top-0 z-40">
-          <button
-            className="p-1.5 -ml-1.5 rounded-md hover:bg-muted"
-            onClick={() => setMobileOpen(true)}
-            aria-label="Menu"
-          >
-            <Menu className="h-5 w-5" />
-          </button>
+          {!isFieldMode && (
+            <button
+              className="p-1.5 -ml-1.5 rounded-md hover:bg-muted"
+              onClick={() => setMobileOpen(true)}
+              aria-label="Menu"
+            >
+              <Menu className="h-5 w-5" />
+            </button>
+          )}
           <div className="flex items-center gap-2">
             <div className="h-7 w-7 rounded-md bg-white grid place-items-center overflow-hidden ring-1 ring-border">
               <img src={logoSts} alt="STS" className="h-full w-full object-contain" />
@@ -140,11 +173,48 @@ export function AppLayout() {
 
             <div className="font-semibold text-sm">STS SARL</div>
           </div>
+          <div className="ml-auto min-w-0 text-right">
+            <div className="max-w-36 truncate text-xs font-medium">{displayName}</div>
+            <div className="text-[10px] text-muted-foreground">{roleLabel}</div>
+          </div>
+          {isFieldMode && (
+            <button
+              className="p-2 -mr-2 rounded-md text-muted-foreground hover:bg-muted"
+              onClick={handleLogout}
+              aria-label="Se déconnecter"
+            >
+              <LogOut className="h-5 w-5" />
+            </button>
+          )}
         </div>
-        <div className="flex-1 min-w-0">
+        <div className={`flex-1 min-w-0 ${isFieldMode ? "pb-20 lg:pb-0" : ""}`}>
           <Outlet />
         </div>
       </main>
+
+      {/* Mobile bottom tabs (technicien) */}
+      {isFieldMode && (
+        <nav
+          className="lg:hidden fixed inset-x-0 bottom-0 z-40 grid border-t border-border bg-card pb-[env(safe-area-inset-bottom)]"
+          style={{ gridTemplateColumns: `repeat(${navItems.length}, minmax(0, 1fr))` }}
+        >
+          {navItems.map((n) => {
+            const active = pathname === n.to || pathname.startsWith(`${n.to}/`);
+            return (
+              <Link
+                key={n.to}
+                to={n.to}
+                className={`flex flex-col items-center gap-1 py-2.5 text-[11px] font-medium transition-colors ${
+                  active ? "text-primary" : "text-muted-foreground"
+                }`}
+              >
+                <n.icon className="h-5 w-5" />
+                {n.label}
+              </Link>
+            );
+          })}
+        </nav>
+      )}
     </div>
   );
 }

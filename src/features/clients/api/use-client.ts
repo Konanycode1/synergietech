@@ -13,12 +13,23 @@ type ClientListResponse =
       data?: Client[] | { clients?: Client[] };
     };
 
+type ClientDetailResponse = Client | { client: Client } | { data: Client | { client: Client } };
+
 function extractClients(response?: ClientListResponse): Client[] {
   if (Array.isArray(response)) return response;
   if (Array.isArray(response?.clients)) return response.clients;
   if (Array.isArray(response?.data)) return response.data;
   if (response?.data && Array.isArray(response.data.clients)) return response.data.clients;
   return [];
+}
+
+function extractClient(response?: ClientDetailResponse | null): Client | null {
+  if (!response) return null;
+  if ("client" in response) return response.client;
+  if ("data" in response) {
+    return "client" in response.data ? response.data.client : response.data;
+  }
+  return response;
 }
 
 export function useClients() {
@@ -35,12 +46,12 @@ export function useClients() {
 }
 
 export function useClient(id?: string) {
-  const { data, error, mutate, isLoading } = useSWR<Client | { data: Client } | null>(
+  const { data, error, mutate, isLoading } = useSWR<ClientDetailResponse | null>(
     id ? `${api}client/${id}` : null,
     apiRequest,
   );
   return {
-    client: data ? ("data" in data ? data.data : data) : null,
+    client: extractClient(data),
     error,
     mutate,
     isLoading,
@@ -51,12 +62,12 @@ export function useClientActions() {
   const { mutate } = useSWRConfig();
 
   const refresh = (id?: string) =>
-  Promise.all([
-    mutate(apiEndpoints.allUser),
-    id ? mutate(apiEndpoints.userId(id)) : Promise.resolve(),
-    mutate(apiEndpoints.prospects),
-    mutate(apiEndpoints.interventions),
-  ]);
+    Promise.all([
+      mutate(apiEndpoints.allUser),
+      id ? mutate(apiEndpoints.userId(id)) : Promise.resolve(),
+      mutate(apiEndpoints.prospects),
+      mutate(apiEndpoints.interventions),
+    ]);
 
   return {
     addClient: async (payload: CreateClientDto) => {

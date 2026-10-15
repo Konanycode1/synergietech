@@ -1,3 +1,3 @@
-const configuredApiUrl = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/+$/, "");
+const configuredApiUrl = "https://api.stssarl.com/api";
 
 export const api = configuredApiUrl ? `${configuredApiUrl}/` : "/api/";

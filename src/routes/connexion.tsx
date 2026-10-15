@@ -9,22 +9,20 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { login } from "@/features/auth/api/login";
 import { ApiError } from "@/lib/api/client";
-import { getAuthToken, setAuthToken } from "@/lib/auth/token-storage";
+import { getAuthToken } from "@/lib/auth/token-storage";
 import useAuth from "@/hooks/authUser";
 import axios from "axios";
 import { api } from "@/features/util/url";
 
 export function ConnexionPage() {
-  const { login, isLogin, isSuperAdmin, isCommercial, isComptable, isSecretaire, isTechnicien, isAdmin } = useAuth();
+  const login = useAuth((state) => state.login);
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
 
   useEffect(() => {
     if (getAuthToken()) {
@@ -45,61 +43,40 @@ export function ConnexionPage() {
 
     setIsSubmitting(true);
     try {
-      axios
-      .post(`${api}user/login`, {
+      const res = await axios.post(`${api}user/login`, {
         email,
         password,
-      })
-      .then((res) => {
-        // console.log('retour-server: ',res.data);
-        if (res.data.success == true) {
-          console.log('VALUES: ',res.data);
-          const redirectPath = localStorage.getItem("redirectPath") || "/";
-          localStorage.removeItem("redirectPath");
-          toast.success(res.data.message);
-          login(res.data.token);
-          console.log('isLogin: ', isLogin);
-          console.log('isAdmin: ', isAdmin);
-           console.log('isSecretaire: ', isSecretaire);
-          if (isSuperAdmin || isAdmin) {
-            localStorage.setItem("redirectPath", '/admin');
-            navigate("/admin/home", { replace: true });
-          } else if (isCommercial) {
-            localStorage.setItem("redirectPath", '/commercial');
-            navigate("/commercial/home", { replace: true });
-          } else if (isComptable) {
-            console.log('isComptable: ', isComptable);
-            localStorage.setItem("redirectPath", '/comptable');
-            navigate("/comptable/home", { replace: true });
-          } else if (isTechnicien) {
-            localStorage.setItem("redirectPath", '/technicien');
-            navigate("/technicien", { replace: true });
-          } else if (isSecretaire) {
-            localStorage.setItem("redirectPath", '/secretaire');
-            navigate("/secretaire/home", { replace: true });
-          } 
-          // navigate(redirectPath, { replace: true });
-        } else {
-          console.log('error')
-          toast.error(res.data.message);
-        }
-      })
-      .catch((err) => {
-        toast.error(
-          err.response.data.message ||
-            err.message ||
-            "Une erreur s'est produite",
-        );
-      })
-      .finally(() => {
-        setPending(false);
       });
+
+      if (res.data.success !== true) {
+        toast.error(res.data.message);
+        return;
+      }
+
+      toast.success(res.data.message);
+      await login(res.data.token);
+      localStorage.removeItem("redirectPath");
+
+      const auth = useAuth.getState();
+      if (auth.isSuperAdmin || auth.isAdmin) {
+        navigate("/admin/home", { replace: true });
+      } else if (auth.isCommercial) {
+        navigate("/commercial/home", { replace: true });
+      } else if (auth.isComptable) {
+        navigate("/comptable/home", { replace: true });
+      } else if (auth.isTechnicien) {
+        navigate("/technicien/interventions", { replace: true });
+      } else if (auth.isSecretaire) {
+        navigate("/secretaire/home", { replace: true });
+      }
     } catch (caughtError) {
-      const message =
-        caughtError instanceof ApiError
+      const message = axios.isAxiosError(caughtError)
+        ? caughtError.response?.data?.message || caughtError.message
+        : caughtError instanceof ApiError
           ? caughtError.message
           : "Connexion impossible. Vérifiez vos identifiants.";
       setError(message);
+      toast.error(message);
     } finally {
       setIsSubmitting(false);
     }

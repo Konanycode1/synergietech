@@ -5,7 +5,7 @@ import { defineConfig, loadEnv } from "vite";
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
   const apiProxyTarget =
-    env.VITE_API_PROXY_TARGET || "http://localhost:3333";
+    env.VITE_API_PROXY_TARGET || "https://api.stssarl.com";
 
   return {
     plugins: [react(), tailwindcss()],

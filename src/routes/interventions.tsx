@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Plus, CalendarDays, List } from "lucide-react";
 import { Controller, useForm } from "react-hook-form";
 import { z } from "zod";
 import { type Intervention } from "@/types";
 import { useContrats } from "@/features/contrats/api/use-contrats";
+import { useClients } from "@/features/clients/api/use-client";
 import { useUsers } from "@/features/equipe/api/use-equipe";
 import { RoleSTS, StatutIntervention, TypeIntervention } from "@/features/interface/enum";
 import {
@@ -13,6 +15,8 @@ import {
   useInterventions,
 } from "@/features/interventions/api/use-interventions";
 import { FieldError } from "@/components/PhoneField";
+import { getAppSection } from "@/config/navigation";
+import { TechnicienInterventions } from "@/features/interventions/components/TechnicienInterventions";
 import { getApiErrorMessage } from "@/lib/api/client";
 import { formatDate, formatDateTime } from "@/lib/formatters";
 import { PageHeader } from "@/components/PageHeader";
@@ -113,6 +117,12 @@ const STATUT_STYLE: Record<StatutIntervention, string> = {
 };
 
 export function InterventionsPage() {
+  const { pathname } = useLocation();
+  if (getAppSection(pathname) === "technicien") return <TechnicienInterventions />;
+  return <InterventionsBoard />;
+}
+
+function InterventionsBoard() {
   const { interventions } = useInterventions();
   const [openNew, setOpenNew] = useState(false);
   const [detailId, setDetailId] = useState<string | null>(null);
@@ -123,7 +133,7 @@ export function InterventionsPage() {
   );
 
   return (
-    <div className="p-6 lg:p-8">
+    <div className="p-4 sm:p-6 lg:p-8">
       <PageHeader
         title="Interventions"
         subtitle="Planning et suivi des installations, maintenances et dépannages"
@@ -214,7 +224,7 @@ function WeekCalendar({ onOpen }: { onOpen: (id: string) => void }) {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-3">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
         <div className="text-sm text-muted-foreground">
           Semaine du {formatDate(days[0].toISOString())} au {formatDate(days[6].toISOString())}
         </div>
@@ -230,47 +240,49 @@ function WeekCalendar({ onOpen }: { onOpen: (id: string) => void }) {
           </Button>
         </div>
       </div>
-      <div className="grid grid-cols-7 gap-2">
-        {days.map((d) => {
-          const items = interventions.filter((i) => {
-            const di = new Date(i.dateHeure);
-            return di.toDateString() === d.toDateString();
-          });
-          return (
-            <Card key={d.toISOString()} className="min-h-[220px]">
-              <CardContent className="p-2.5">
-                <div className="text-[11px] uppercase text-muted-foreground">
-                  {d.toLocaleDateString("fr-FR", { weekday: "short" })}
-                </div>
-                <div className="text-lg font-semibold mb-2">{d.getDate()}</div>
-                <div className="space-y-1.5">
-                  {items.map((i) => (
-                    <button
-                      key={i.id}
-                      onClick={() => onOpen(i.id)}
-                      className="w-full text-left bg-muted/60 hover:bg-muted rounded px-2 py-1.5 text-[11px]"
-                    >
-                      <div className="font-medium truncate">{i.clientNom}</div>
-                      <div className="text-muted-foreground">
-                        {new Date(i.dateHeure).toLocaleTimeString("fr-FR", {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}{" "}
-                        · {i.type}
-                      </div>
-                      <Badge
-                        variant="outline"
-                        className={`${STATUT_STYLE[i.statut]} mt-1 text-[9px]`}
+      <div className="-mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
+        <div className="grid min-w-[840px] grid-cols-7 gap-2">
+          {days.map((d) => {
+            const items = interventions.filter((i) => {
+              const di = new Date(i.dateHeure);
+              return di.toDateString() === d.toDateString();
+            });
+            return (
+              <Card key={d.toISOString()} className="min-h-[220px]">
+                <CardContent className="p-2.5">
+                  <div className="text-[11px] uppercase text-muted-foreground">
+                    {d.toLocaleDateString("fr-FR", { weekday: "short" })}
+                  </div>
+                  <div className="text-lg font-semibold mb-2">{d.getDate()}</div>
+                  <div className="space-y-1.5">
+                    {items.map((i) => (
+                      <button
+                        key={i.id}
+                        onClick={() => onOpen(i.id)}
+                        className="w-full text-left bg-muted/60 hover:bg-muted rounded px-2 py-1.5 text-[11px]"
                       >
-                        {i.statut}
-                      </Badge>
-                    </button>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          );
-        })}
+                        <div className="font-medium truncate">{i.clientNom}</div>
+                        <div className="text-muted-foreground">
+                          {new Date(i.dateHeure).toLocaleTimeString("fr-FR", {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}{" "}
+                          · {i.type}
+                        </div>
+                        <Badge
+                          variant="outline"
+                          className={`${STATUT_STYLE[i.statut]} mt-1 text-[9px]`}
+                        >
+                          {i.statut}
+                        </Badge>
+                      </button>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
@@ -460,7 +472,16 @@ function InterventionDetail({ id, onClose }: { id: string; onClose: () => void }
 function NewInterventionDialog({ onClose }: { onClose: () => void }) {
   const { addIntervention: add } = useInterventionActions();
   const { contrats } = useContrats();
+  const { clients } = useClients();
   const { users } = useUsers();
+  const clientsById = useMemo(
+    () => new Map(clients.map((client) => [client.id, client])),
+    [clients],
+  );
+  const getContractClientName = (contrat: (typeof contrats)[number]) => {
+    const client = contrat.client ?? clientsById.get(contrat.clientId);
+    return client?.companyName || client?.name || "Client non renseigné";
+  };
   const techniciens = useMemo(
     () => users.filter((user) => user.role === RoleSTS.TECHNICIEN && user.isActive),
     [users],
@@ -556,7 +577,7 @@ function NewInterventionDialog({ onClose }: { onClose: () => void }) {
                     shouldValidate: true,
                   });
 
-                  setValue("clientNom", contrat?.clientNom ?? "", {
+                  setValue("clientNom", contrat ? getContractClientName(contrat) : "", {
                     shouldDirty: true,
                     shouldValidate: true,
                   });
@@ -569,7 +590,7 @@ function NewInterventionDialog({ onClose }: { onClose: () => void }) {
                   <SelectItem value="none">— Client hors contrat —</SelectItem>
                   {contrats.map((contrat) => (
                     <SelectItem key={contrat.id} value={contrat.id}>
-                      {contrat.clientNom} · {contrat.type}
+                      {getContractClientName(contrat)} — {contrat.type}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -586,7 +607,7 @@ function NewInterventionDialog({ onClose }: { onClose: () => void }) {
               <Input {...field} placeholder="Nom du client" aria-invalid={!!errors.clientNom} />
             )}
           />
-          <FieldError message={errors.clientId?.message} />
+          <FieldError message={errors.clientNom?.message} />
         </div>
         <div>
           <Label>Type</Label>

@@ -36,4 +36,10 @@ export const apiEndpoints = {
   clientId: (id: string) => `${api}client/${id}`,
   updateClient: (id: string) => `${api}client/update/${id}`,
   deleteClient: (id: string) => `${api}client/delete/${id}`,
+  stockArticles: `${api}stock/articles`,
+  stockArticle: (id: string) => `${api}stock/articles/${id}`,
+  stockAlertes: `${api}stock/alertes`,
+  stockCategories: `${api}stock/categories`,
+  stockCategorie: (id: string) => `${api}stock/categories/${id}`,
+  stockMouvements: `${api}stock/mouvements`,
 } as const;

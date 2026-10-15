@@ -188,7 +188,10 @@ export function exportMaintenanceContractPDF(data: MaintenanceContractPdfData) {
   const signatureY = Math.max(y + 15, 155);
   doc.setFont("times", "bold");
   doc.setFontSize(12);
-  doc.text("POUR STS SARL", margin + 28, signatureY, { align: "center" });
+  doc.text("POUR SYNERGIE TECH SOLUTIONS SARL", margin + 35, signatureY, {
+    align: "center",
+    maxWidth: 75,
+  });
   doc.text(
     `POUR ${data.clientName.toLocaleUpperCase("fr-FR")}`,
     pageWidth - margin - 35,
@@ -200,7 +203,7 @@ export function exportMaintenanceContractPDF(data: MaintenanceContractPdfData) {
   );
   doc.setFont("times", "normal");
   doc.setFontSize(10);
-  doc.text("Nom, signature et cachet", margin + 28, signatureY + 8, { align: "center" });
+  doc.text("Nom, signature et cachet", margin + 35, signatureY + 8, { align: "center" });
   doc.text("Lu et approuvé — signature et cachet", pageWidth - margin - 35, signatureY + 8, {
     align: "center",
   });

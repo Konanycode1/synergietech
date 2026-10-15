@@ -100,6 +100,7 @@ const STATUT_STYLE: Record<ContratStatut, string> = {
 
 export function ContratsPage() {
   const { contrats } = useContrats();
+  const { clients } = useClients();
   const [openNew, setOpenNew] = useState(false);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [searchParams] = useSearchParams();
@@ -122,6 +123,10 @@ export function ContratsPage() {
    const j = c.dateEcheance ? daysUntil(c.dateEcheance) : -1;
     return j >= 0 && j <= 30 && c.statut !== "RESILIE" && c.statut !== "BROUILLON";
   }).length;
+  const clientsById = useMemo(
+    () => new Map(clients.map((client) => [client.id, client])),
+    [clients],
+  );
 
   return (
     <div className="p-6 lg:p-8">
@@ -160,7 +165,12 @@ export function ContratsPage() {
                 j >= 0 && j <= 30 && c.statut !== "RESILIE" && c.statut !== "BROUILLON";
               return (
                 <TableRow key={c.id} onClick={() => setDetailId(c.id)} className="cursor-pointer">
-                  <TableCell className="font-medium">{c.client?.name}</TableCell>
+                  <TableCell className="font-medium">
+                    {c.client?.companyName || c.client?.name ||
+                      clientsById.get(c.clientId)?.companyName ||
+                      clientsById.get(c.clientId)?.name ||
+                      "-"}
+                  </TableCell>
                   <TableCell className="text-xs">{c.type}</TableCell>
                   <TableCell className="text-xs">{c.type}</TableCell>
                   <TableCell className="text-right font-mono text-xs">
@@ -349,6 +359,15 @@ function montantEnLettresFCFA(value: number): string {
     .toUpperCase();
 }
 
+function formatClientReference(clientId: string): string {
+  const segments = clientId.split("-");
+  if (segments.length >= 4) {
+    return `#RC-${segments[2]}-${segments[3]}`;
+  }
+
+  return `#RC-${clientId}`;
+}
+
 
 // ============================================
 // CHARGEMENT DU LOGO
@@ -357,6 +376,7 @@ function montantEnLettresFCFA(value: number): string {
 
 async function exportContratPDF(contrat: Contrat) {
   try {
+    const clientName = contrat.client?.companyName || contrat.client?.name || "-";
     const doc = new jsPDF({
       orientation: "portrait",
       unit: "mm",
@@ -521,19 +541,19 @@ async function exportContratPDF(contrat: Contrat) {
     doc.setFontSize(9);
 
     doc.text(
-      `Client : ${contrat.client?.name ?? "-"}`,
+      `Client : ${clientName}`,
       18,
       70
     );
 
     doc.text(
-      `Référence client : ${contrat.clientId}`,
+      "Prestataire : SYNERGIE TECH SOLUTIONS SARL",
       18,
       76
     );
 
     doc.text(
-      `Type de contrat : ${contrat.type}`,
+      `Référence client : ${formatClientReference(contrat.clientId)}`,
       18,
       82
     );
@@ -825,7 +845,7 @@ async function exportContratPDF(contrat: Contrat) {
     // ========================================
 
     const nomClient = (
-      contrat.client?.name ?? contrat.id
+      clientName !== "-" ? clientName : contrat.id
     )
       .replace(/[\\/:*?"<>|]/g, "-")
       .trim();
@@ -858,6 +878,7 @@ function ContratDetail({
   onClose: () => void;
 }) {
   const { contrat } = useContrat(id);
+  const { client: linkedClient } = useClient(contrat?.clientId);
   const {
     updateContrat,
     addLigne,
@@ -874,18 +895,22 @@ function ContratDetail({
 
   if (!contrat) return null;
 
+  const client = linkedClient ?? contrat.client;
+  const clientName = client?.companyName || client?.name || "Client non renseigné";
+  const contratWithClient = { ...contrat, client };
   const j = daysUntil(contrat.dateEcheance);
   return (
     <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
       <DialogHeader>
         <DialogTitle className="flex items-center gap-2">
-          {contrat.client?.name}
+          {clientName}
           <Badge variant="outline" className={STATUT_STYLE[contrat.statut]}>
             {contrat.statut}
           </Badge>
         </DialogTitle>
         <DialogDescription>
-          {contrat.type} 
+          {contrat.type} · Référence client : {formatClientReference(contrat.clientId)} ·
+          Prestataire : SYNERGIE TECH SOLUTIONS SARL
         </DialogDescription>
       </DialogHeader>
 
@@ -1081,7 +1106,7 @@ function ContratDetail({
         <Button variant="outline" onClick={onClose}>
           Fermer
           </Button>
-           <Button variant="outline" onClick={() => exportContratPDF(contrat)}>
+           <Button variant="outline" onClick={() => exportContratPDF(contratWithClient)}>
             Exporter en PDF
         </Button>
         <Button
@@ -1097,7 +1122,7 @@ function ContratDetail({
       <Dialog open={openMaintenance} onOpenChange={setOpenMaintenance}>
         {openMaintenance && (
           <MaintenanceContractDialog
-            source={contrat}
+            source={contratWithClient}
             onClose={() => setOpenMaintenance(false)}
           />
         )}

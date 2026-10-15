@@ -12,8 +12,10 @@ import TechnicienRoutes from "./technicienRoute";
 type Access = "admin" | "secretaire" | "commercial" | "technicien";
 
 function ProtectedRoute({ access, children }: { access: Access; children: ReactNode }) {
+  console.log("access: ",access)
   const location = useLocation();
   const { isLogin, isSuperAdmin, isAdmin, isSecretaire, isCommercial, isTechnicien } = useAuth();
+  console.log(isSecretaire)
 
   if (!isLogin) {
     localStorage.setItem("redirectPath", location.pathname + location.search);

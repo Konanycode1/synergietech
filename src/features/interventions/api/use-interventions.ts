@@ -9,6 +9,7 @@ import type {
   APIintervention,
   ApiInterventionWithRelations,
   CreateInterventionDto,
+  EndInterventionDto,
   UpdateInterventionDto,
 } from "@/features/interface/intervention.type";
 
@@ -41,6 +42,7 @@ function toUiIntervention(intervention: ApiInterventionWithRelations): Intervent
     clientNom: intervention.client?.name ?? "",
     type: typeInt[intervention.type] ?? "INSTALLATION",
     technicien: intervention.technicien?.name ?? "Non assigné",
+    technicienId: intervention.technicienId ?? undefined,
     dateHeure: intervention.dateHeurePrevue,
     statut: statutInt[intervention.statut] ?? "PLANIFIEE",
     description: intervention.description ?? "",
@@ -94,6 +96,14 @@ export function useInterventionActions() {
       const response = await apiRequest<ItemResponse<APIintervention>>(
         apiEndpoints.updateIntervention(id),
         { method: "PUT", body: put },
+      );
+      await refresh(id);
+      return toUiIntervention(extractItem(response));
+    },
+    endIntervention: async (id: string, payload: EndInterventionDto) => {
+      const response = await apiRequest<ItemResponse<APIintervention>>(
+        apiEndpoints.endIntervention(id),
+        { method: "PUT", body: payload },
       );
       await refresh(id);
       return toUiIntervention(extractItem(response));

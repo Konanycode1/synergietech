@@ -19,7 +19,7 @@ interface AuthStore {
   userName: string;
   userId: string;
   fetchUser: (token: string) => Promise<void>;
-  login: (token: string) => void;
+  login: (token: string) => Promise<void>;
   logout: () => void;
   loginOnStart: () => void;
 }
@@ -55,13 +55,13 @@ const useAuth = create<AuthStore>((set) => ({
         const { data } = response.data;
         set({
           token: token,
-          user: data.user,
+          user: data.user ?? data,
           isLogin: true,
           loginPending: false,
           isSuperAdmin: data.role === "SUPERADMIN",
           isAdmin: data.role === "ADMIN",
           isTechnicien: data.role === "TECHNICIEN",
-          userName: data.nom,
+          userName: data.nom ?? data.name,
           userId: data.id,
           isCommercial: data.role === "COMMERCIAL",
           isSecretaire: data.role === "SECRETAIRE",
@@ -77,7 +77,7 @@ const useAuth = create<AuthStore>((set) => ({
                     ? "interventions"
                     : data.role === "SECRETAIRE"
                       ? "admin"
-                      : data.user.poste === "COMPTABLE"
+                      : (data.user ?? data).poste === "COMPTABLE"
                         ? "comptable"
                         : "admin",
         });
@@ -97,17 +97,31 @@ const useAuth = create<AuthStore>((set) => ({
     }
   },
 
-  login: (token) => {
+  login: async (token) => {
     console.log("token-server", token);
     localStorage.setItem("token", token);
     set({ loginPending: true });
-    useAuth.getState().fetchUser(token);
+    await useAuth.getState().fetchUser(token);
   },
 
   logout: () => {
-    localStorage.removeItem("token");
-    set({ user: {} as User, isLogin: false });
-    toast.success("Déconnexion réuissie");
+    localStorage.clear();
+    set({
+      token: "",
+      url: "admin",
+      user: {} as User,
+      userName: "",
+      userId: "",
+      isLogin: false,
+      loginPending: false,
+      isSuperAdmin: false,
+      isAdmin: false,
+      isTechnicien: false,
+      isCommercial: false,
+      isSecretaire: false,
+      isComptable: false,
+    });
+    toast.success("Déconnexion réussie");
   },
   loginOnStart: () => {
     const token = localStorage.getItem("token");

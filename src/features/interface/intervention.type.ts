@@ -28,10 +28,14 @@ export interface CreateInterventionDto {
   contratId?: string;
   technicienId?: string;
   statut?: StatutIntervention;
-
 }
 
 export type UpdateInterventionDto = Partial<CreateInterventionDto> & {
   rapport?: string;
   materielRemplace?: boolean;
 };
+
+export interface EndInterventionDto {
+  rapport: string;
+  materielRemplace?: boolean;
+}

@@ -9,6 +9,7 @@ export interface Intervention {
   clientNom: string;
   type: InterventionType;
   technicien: string;
+  technicienId?: string;
   dateHeure: string;
   statut: InterventionStatut;
   description: string;

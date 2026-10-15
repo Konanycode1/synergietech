@@ -1,0 +1,101 @@
+name: Build & Deploy (admin.stssarl.com)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Un seul déploiement à la fois : les suivants attendent la fin du précédent
+concurrency:
+  group: deploy-admin
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build Vite
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # pnpm-lock.yaml est le seul lockfile synchronisé avec package.json
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm build
+        env:
+          VITE_API_URL: ${{ vars.VITE_API_URL || 'https://api.stssarl.com' }}
+          VITE_AUTH_TOKEN_KEY: ${{ vars.VITE_AUTH_TOKEN_KEY || 'token' }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist
+          retention-days: 7
+
+  deploy:
+    name: Déploiement sur le serveur
+    needs: build
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      SSH_HOST: ${{ secrets.SSH_HOST }}
+      SSH_USER: ${{ secrets.SSH_USER }}
+      SSH_PORT: ${{ secrets.SSH_PORT || 22 }}
+      DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+      SITE_URL: https://admin.stssarl.com
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+
+      - name: Vérification de la configuration
+        run: |
+          # Garde-fou : rsync --delete sur un mauvais chemin effacerait des fichiers du serveur
+          case "$DEPLOY_PATH" in
+            */sts-admin|*/sts-admin/) ;;
+            *) echo "DEPLOY_PATH doit pointer vers le dossier sts-admin (reçu : '$DEPLOY_PATH')"; exit 1 ;;
+          esac
+          test -f dist/index.html
+
+      - name: Clé SSH
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          ssh-keyscan -p "$SSH_PORT" -H "$SSH_HOST" >> ~/.ssh/known_hosts
+
+      - name: Envoi des fichiers
+        run: |
+          SSH="ssh -i $HOME/.ssh/id_deploy -p $SSH_PORT"
+          DEST="$SSH_USER@$SSH_HOST:${DEPLOY_PATH%/}"
+          $SSH "$SSH_USER@$SSH_HOST" "mkdir -p '${DEPLOY_PATH%/}/assets'"
+          # 1. Les nouveaux assets (noms hashés) d'abord : l'ancien index.html continue de fonctionner
+          rsync -az --chmod=D755,F644 -e "$SSH" dist/assets/ "$DEST/assets/"
+          # 2. Puis index.html et le reste ; les anciens assets sont conservés pour les onglets déjà ouverts
+          rsync -az --delete --exclude=/assets/ --chmod=D755,F644 -e "$SSH" dist/ "$DEST/"
+          # 3. Nettoyage des assets des versions de plus de 7 jours
+          $SSH "$SSH_USER@$SSH_HOST" "find '${DEPLOY_PATH%/}/assets' -type f -mtime +7 -delete"
+
+      - name: Vérification en ligne
+        run: |
+          # Le script principal du nouveau build doit être celui servi par nginx
+          ENTRY=$(grep -o 'assets/[^"]*\.js' dist/index.html | head -1)
+          echo "Attendu : $ENTRY"
+          for i in 1 2 3 4 5; do
+            if curl -fsS "$SITE_URL/?v=$GITHUB_SHA" | grep -q "$ENTRY"; then
+              echo "Déployé : $SITE_URL"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Le site ne sert pas encore le nouveau build"
+          exit 1

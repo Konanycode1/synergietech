@@ -3,6 +3,7 @@ import { Dashboard } from "@/routes";
 import { ContratsPage } from "@/routes/contrats";
 import { ClientsPage } from "@/routes/clients";
 import { ProspectsPage } from "@/routes/prospects";
+import { StockPage } from "@/routes/stock";
 import { Navigate, Route, Routes } from "react-router-dom";
 
 const CommercialRoutes = () => {
@@ -14,6 +15,7 @@ const CommercialRoutes = () => {
         <Route path="contracts" element={<ContratsPage />} />
         <Route path="clients" element={<ClientsPage />} />
         <Route path="prospects" element={<ProspectsPage />} />
+        <Route path="stock" element={<StockPage />} />
       </Route>
     </Routes>
   );
