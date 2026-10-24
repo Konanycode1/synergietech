@@ -4,13 +4,13 @@ import { Controller, useForm } from "react-hook-form";
 import { z } from "zod";
 import { toast } from "sonner";
 
-import { useContratActions } from "@/features/contrats/api/use-contrats";
-import { exportMaintenanceContractPDF } from "@/features/contrats/maintenance-contract-pdf";
+import {
+  defaultMaintenanceContractTitle,
+  exportMaintenanceContractPDF,
+} from "@/features/contrats/maintenance-contract-pdf";
 import { useClient } from "@/features/clients/api/use-client";
 import type { Contrat } from "@/features/interface/contrats.type";
-import { StatutContrat, TypeContrat } from "@/features/interface/enum";
 import { BESOINS, type BesoinType } from "@/types";
-import { getApiErrorMessage } from "@/lib/api/client";
 import { formatFCFA } from "@/lib/formatters";
 import { FieldError } from "@/components/PhoneField";
 import { Button } from "@/components/ui/button";
@@ -32,7 +32,16 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
+const BILLING_PERIOD_MONTHS = { MENSUELLE: 1, TRIMESTRIELLE: 3, ANNUELLE: 12 } as const;
+
+const BILLING_PERIOD_UNIT = {
+  MENSUELLE: "mois",
+  TRIMESTRIELLE: "trimestre",
+  ANNUELLE: "an",
+} as const;
+
 const maintenanceSchema = z.object({
+  title: z.string().trim().min(1, "Le titre du contrat est obligatoire").max(200),
   service: z.custom<BesoinType>(
     (value) => BESOINS.includes(value as BesoinType),
     "Sélectionnez le système à entretenir",
@@ -40,6 +49,9 @@ const maintenanceSchema = z.object({
   siteDescription: z.string().trim().min(1, "Le site concerné est obligatoire").max(250),
   frequency: z.string().trim().min(1, "La fréquence est obligatoire").max(120),
   billingPeriod: z.enum(["MENSUELLE", "TRIMESTRIELLE", "ANNUELLE"]),
+  periodAmount: z
+    .number({ invalid_type_error: "Montant invalide" })
+    .positive("Le montant doit être supérieur à zéro"),
   durationMonths: z.number().int().min(1).max(120),
   startDate: z.string().min(1, "La date de début est obligatoire"),
   tacitRenewal: z.boolean(),
@@ -55,14 +67,8 @@ export function MaintenanceContractDialog({
   source: Contrat;
   onClose: () => void;
 }) {
-  const { addContrat } = useContratActions();
   const { client: linkedClient, isLoading: isClientLoading } = useClient(source.clientId);
   const client = linkedClient ?? source.client;
-  const sourceTotal = (source.lignes ?? []).reduce(
-    (total, line) => total + line.quantite * line.prixUnitaire,
-    0,
-  );
-  const quoteTotal = sourceTotal || source.montant;
   const clientName = client?.companyName || client?.name || "Client";
 
   const {
@@ -72,33 +78,50 @@ export function MaintenanceContractDialog({
     setError,
     setValue,
     watch,
-    formState: { errors, isSubmitting },
+    formState: { errors, isSubmitting, dirtyFields },
   } = useForm<MaintenanceFormValues>({
     resolver: zodResolver(maintenanceSchema),
     defaultValues: {
+      title: defaultMaintenanceContractTitle("TRIMESTRIELLE", "vidéosurveillance"),
       service: "vidéosurveillance",
       siteDescription: client?.address || "",
       frequency: "Un passage mensuel",
       billingPeriod: "TRIMESTRIELLE",
+      periodAmount: 50_000,
       durationMonths: 12,
       startDate: new Date().toISOString().slice(0, 10),
       tacitRenewal: true,
-      outOfContractFee: 25_000,
+      outOfContractFee: 50_000,
     },
   });
 
-  const durationMonths = watch("durationMonths");
-  const monthlyAmount = durationMonths > 0 ? quoteTotal / durationMonths : 0;
+  const [service, billingPeriod, periodAmount, durationMonths] = watch([
+    "service",
+    "billingPeriod",
+    "periodAmount",
+    "durationMonths",
+  ]);
+  const periodCount = Math.max(
+    1,
+    Math.round(durationMonths / BILLING_PERIOD_MONTHS[billingPeriod]),
+  );
+  const contractTotal = (periodAmount || 0) * periodCount;
 
+  // Tant que l'utilisateur n'a pas modifié le titre, il suit le système et la périodicité.
   useEffect(() => {
-    if (linkedClient) {
-      if (linkedClient.address) {
-        setValue("siteDescription", linkedClient.address, { shouldValidate: true });
-      }
+    if (!dirtyFields.title) {
+      setValue("title", defaultMaintenanceContractTitle(billingPeriod, service));
     }
-  }, [linkedClient, setValue]);
+  }, [billingPeriod, service, dirtyFields.title, setValue]);
 
-  const submit = async (values: MaintenanceFormValues) => {
+  // Pré-remplit le site avec l'adresse du client sans écraser une saisie de l'utilisateur.
+  useEffect(() => {
+    if (linkedClient?.address && !dirtyFields.siteDescription) {
+      setValue("siteDescription", linkedClient.address, { shouldValidate: true });
+    }
+  }, [linkedClient, dirtyFields.siteDescription, setValue]);
+
+  const submit = (values: MaintenanceFormValues) => {
     clearErrors("root.server");
 
     if (!source.clientId) {
@@ -109,55 +132,29 @@ export function MaintenanceContractDialog({
       return;
     }
 
-    if (quoteTotal <= 0) {
-      setError("root.server", {
-        type: "server",
-        message: "Le montant total du devis doit être supérieur à zéro.",
-      });
-      return;
-    }
-
-    const startDate = new Date(`${values.startDate}T00:00:00`);
-    const endDate = new Date(startDate);
-    endDate.setMonth(endDate.getMonth() + values.durationMonths);
-
+    // Le contrat d'entretien est généré à partir du devis existant : aucun nouvel
+    // enregistrement n'est créé côté API, le devis source reste inchangé.
     try {
-      await addContrat({
-        type: TypeContrat.MAINTENANCE,
-        clientId: source.clientId,
-        statut: StatutContrat.ACTIF,
-        montant: quoteTotal,
-        dateSignature: startDate.toISOString(),
-        dateEcheance: endDate.toISOString(),
-        dureeMois: values.durationMonths,
-        lignes: [
-          {
-            designation: `Entretien ${values.service} — ${values.frequency}`,
-            quantite: values.durationMonths,
-            prixUnitaire: quoteTotal / values.durationMonths,
-          },
-        ],
-      });
-
       exportMaintenanceContractPDF({
+        title: values.title,
         clientName,
         clientRepresentative: client?.companyName ? client.name : undefined,
-        clientAddress: client?.address,
+        clientAddress: values.siteDescription || client?.address,
         service: values.service,
         siteDescription: values.siteDescription,
         frequency: values.frequency,
-        monthlyAmount: quoteTotal / values.durationMonths,
+        periodAmount: values.periodAmount,
         billingPeriod: values.billingPeriod,
         durationMonths: values.durationMonths,
-        startDate: startDate.toISOString(),
+        startDate: new Date(`${values.startDate}T00:00:00`).toISOString(),
         tacitRenewal: values.tacitRenewal,
         outOfContractFee: values.outOfContractFee,
       });
 
-      toast.success("Contrat d'entretien créé et PDF généré");
+      toast.success("Contrat d'entretien généré en PDF");
       onClose();
-    } catch (error) {
-      const message = getApiErrorMessage(error, "La création du contrat d'entretien a échoué.");
+    } catch {
+      const message = "La génération du PDF du contrat d'entretien a échoué.";
       setError("root.server", { type: "server", message });
       toast.error(message);
     }
@@ -166,14 +163,24 @@ export function MaintenanceContractDialog({
   return (
     <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
       <DialogHeader>
-        <DialogTitle>Créer le contrat d’entretien</DialogTitle>
+        <DialogTitle>Contrat d’entretien</DialogTitle>
         <DialogDescription>
-          Les informations de {clientName} sont reprises du devis. Total du devis source :{" "}
-          {formatFCFA(quoteTotal)}.
+          Les informations de {clientName} sont reprises du devis. Le montant de l’entretien est
+          indépendant du devis.
         </DialogDescription>
       </DialogHeader>
 
       <form onSubmit={handleSubmit(submit)} className="grid gap-4 sm:grid-cols-2">
+        <div className="sm:col-span-2">
+          <Label>Titre du contrat</Label>
+          <Controller
+            name="title"
+            control={control}
+            render={({ field }) => <Input {...field} aria-invalid={!!errors.title} />}
+          />
+          <FieldError message={errors.title?.message} />
+        </div>
+
         <div>
           <Label>Système à entretenir</Label>
           <Controller
@@ -218,16 +225,6 @@ export function MaintenanceContractDialog({
         </div>
 
         <div>
-          <Label>Montant mensuel TTC (calculé)</Label>
-          <div className="flex h-9 items-center rounded-md border border-input bg-muted/40 px-3 font-mono text-sm">
-            {formatFCFA(monthlyAmount)}
-          </div>
-          <div className="mt-1 text-xs text-muted-foreground">
-            Total du devis ÷ {durationMonths || 0} mois
-          </div>
-        </div>
-
-        <div>
           <Label>Périodicité de facturation</Label>
           <Controller
             name="billingPeriod"
@@ -245,6 +242,24 @@ export function MaintenanceContractDialog({
               </Select>
             )}
           />
+        </div>
+
+        <div>
+          <Label>Montant TTC par {BILLING_PERIOD_UNIT[billingPeriod]} (FCFA)</Label>
+          <Controller
+            name="periodAmount"
+            control={control}
+            render={({ field }) => (
+              <Input
+                type="number"
+                min={0}
+                value={field.value}
+                aria-invalid={!!errors.periodAmount}
+                onChange={(event) => field.onChange(Number(event.target.value))}
+              />
+            )}
+          />
+          <FieldError message={errors.periodAmount?.message} />
         </div>
 
         <div>
@@ -275,7 +290,7 @@ export function MaintenanceContractDialog({
         </div>
 
         <div>
-          <Label>Intervention hors contrat (FCFA)</Label>
+          <Label>Montant du NB — déplacement hors contrat (FCFA)</Label>
           <Controller
             name="outOfContractFee"
             control={control}
@@ -305,7 +320,8 @@ export function MaintenanceContractDialog({
         />
 
         <div className="rounded-md border bg-muted/30 p-3 text-sm sm:col-span-2">
-          Montant total repris du devis : <strong>{formatFCFA(quoteTotal)}</strong>
+          Montant total du contrat : <strong>{formatFCFA(contractTotal)}</strong> ({periodCount} ×{" "}
+          {formatFCFA(periodAmount || 0)})
         </div>
 
         <div className="sm:col-span-2">
@@ -320,8 +336,8 @@ export function MaintenanceContractDialog({
             {isClientLoading && !source.client
               ? "Chargement du client..."
               : isSubmitting
-                ? "Création..."
-                : "Créer et générer le PDF"}
+                ? "Génération..."
+                : "Générer le PDF"}
           </Button>
         </DialogFooter>
       </form>

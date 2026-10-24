@@ -4,13 +4,15 @@ import logoSts from "@/assets/logo.png";
 import { formatDate, formatFCFA } from "@/lib/formatters";
 
 export interface MaintenanceContractPdfData {
+  title: string;
   clientName: string;
   clientRepresentative?: string;
   clientAddress?: string;
   service: string;
   siteDescription: string;
   frequency: string;
-  monthlyAmount: number;
+  /** Montant TTC facturé à chaque période (mois, trimestre ou année). */
+  periodAmount: number;
   billingPeriod: "MENSUELLE" | "TRIMESTRIELLE" | "ANNUELLE";
   durationMonths: number;
   startDate: string;
@@ -19,10 +21,24 @@ export interface MaintenanceContractPdfData {
 }
 
 const COMPANY_FOOTER = [
-  "SARL au capital de 5 000 000 FCFA - Siège social : Cocody Angré Deux Plateaux SICOGI - 06 BP 564 ABIDJAN 06",
-  "N° CPTE CORIS BANK : 00853102410167 - N° R.C. : CI-ABJ-03-2023-B12-01304 - N° CC. : 2300926G",
-  "Tél. : 25 22 02 90 53 - Email : synergies@yahoo.fr - www.sts.ci",
+  "SARL au capital de 5.000.000 FCFA - Siège social : Cocody Angré Deux Plateaux - 06 BP 564 ABIDJAN 06",
+  "N° CPTE CORIS BANK : 00853102410167 - N° R.C. : CI-ABJ-03-2023-B12-01304 / N° CC. : 2300926G",
+  "Tél : 25 22 02 90 53 - Email : synergies@yahoo.fr / www.synergietechsolutions.org",
 ];
+
+export const BILLING_PERIOD_ADJECTIVE: Record<MaintenanceContractPdfData["billingPeriod"], string> =
+  {
+    MENSUELLE: "MENSUEL",
+    TRIMESTRIELLE: "TRIMESTRIEL",
+    ANNUELLE: "ANNUEL",
+  };
+
+export function defaultMaintenanceContractTitle(
+  billingPeriod: MaintenanceContractPdfData["billingPeriod"],
+  service: string,
+) {
+  return `CONTRAT D’ENTRETIEN ${BILLING_PERIOD_ADJECTIVE[billingPeriod]} DU SYSTÈME DE ${service.toLocaleUpperCase("fr-FR")}`;
+}
 
 function sanitizeFilename(value: string) {
   return value.replace(/[\\/:*?"<>|]/g, "-").trim();
@@ -59,12 +75,15 @@ export function exportMaintenanceContractPDF(data: MaintenanceContractPdfData) {
   const addFooter = (page: number, totalPages: number) => {
     doc.setDrawColor(...red);
     doc.setLineWidth(0.4);
-    doc.line(margin, pageHeight - 26, pageWidth - margin, pageHeight - 26);
-    doc.setTextColor(80, 80, 80);
+    doc.line(margin, pageHeight - 24, pageWidth - margin, pageHeight - 24);
+    doc.setTextColor(60, 60, 60);
     doc.setFont("times", "normal");
-    doc.setFontSize(7);
+    doc.setFontSize(8);
     COMPANY_FOOTER.forEach((line, index) => {
-      doc.text(line, pageWidth / 2, pageHeight - 20 + index * 4, { align: "center" });
+      doc.text(line, pageWidth / 2, pageHeight - 19 + index * 4, {
+        align: "center",
+        maxWidth: contentWidth,
+      });
     });
     doc.text(`Page ${page} / ${totalPages}`, pageWidth - margin, pageHeight - 5, {
       align: "right",
@@ -90,9 +109,6 @@ export function exportMaintenanceContractPDF(data: MaintenanceContractPdfData) {
     return paragraph(text, y + 1);
   };
 
-  const billingMonths =
-    data.billingPeriod === "MENSUELLE" ? 1 : data.billingPeriod === "TRIMESTRIELLE" ? 3 : 12;
-  const invoiceAmount = data.monthlyAmount * billingMonths;
   const billingLabel =
     data.billingPeriod === "MENSUELLE"
       ? "chaque mois"
@@ -108,14 +124,19 @@ export function exportMaintenanceContractPDF(data: MaintenanceContractPdfData) {
   doc.setTextColor(0, 0, 0);
   doc.setFont("times", "bold");
   doc.setFontSize(14);
-  doc.text(
-    `CONTRAT D’ENTRETIEN DU SYSTÈME DE ${data.service.toLocaleUpperCase("fr-FR")}`,
-    pageWidth / 2,
-    44,
-    { align: "center", maxWidth: contentWidth },
-  );
+  const titleLines: string[] = doc.splitTextToSize(data.title, contentWidth - 16);
+  const titleLineHeight = 6;
+  const titleBoxTop = 39;
+  const titleBoxHeight = titleLines.length * titleLineHeight + 6;
+  doc.setDrawColor(0, 0, 0);
+  doc.setLineWidth(0.6);
+  doc.rect(margin + 4, titleBoxTop, contentWidth - 8, titleBoxHeight);
+  doc.text(titleLines, pageWidth / 2, titleBoxTop + 7.5, {
+    align: "center",
+    lineHeightFactor: titleLineHeight / 4.94,
+  });
 
-  let y = 57;
+  let y = titleBoxTop + titleBoxHeight + 10;
   y = paragraph("Entre les soussignés :", y, { bold: true });
   y = paragraph(
     "La société SYNERGIE TECH SOLUTIONS SARL (STS SARL), dont le siège social est situé à Cocody Angré, représentée par son Directeur Général, ci-après dénommée « LE PRESTATAIRE ».",
@@ -149,8 +170,8 @@ export function exportMaintenanceContractPDF(data: MaintenanceContractPdfData) {
     3,
     "Prix et exclusions",
     `Le remplacement d’un appareil ou d’un élément défectueux n’est pas compris dans le forfait et fait l’objet d’un devis séparé accepté par le client. L’entretien est facturé ${billingLabel} à ${formatFCFA(
-      invoiceAmount,
-    )} TTC, soit ${formatFCFA(data.monthlyAmount)} TTC par mois, payable par avance.`,
+      data.periodAmount,
+    )} Toutes Taxes Comprises (TTC), payable par avance.`,
     y + 4,
   );
 
@@ -176,9 +197,9 @@ export function exportMaintenanceContractPDF(data: MaintenanceContractPdfData) {
     y + 5,
   );
   y = paragraph(
-    `NB : En l’absence d’un contrat d’entretien après la période de garantie, toute intervention sur le système de sécurité est facturée au minimum à ${formatFCFA(
+    `NB : En l’absence de contrat d’entretien, toute intervention sur le système de sécurité sera facturée à ${formatFCFA(
       data.outOfContractFee,
-    )}, hors pièces et fournitures.`,
+    )} pour le déplacement.`,
     y + 7,
     { bold: true },
   );
